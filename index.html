@@ -1,0 +1,1349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitch Multi-Stream Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0e0e10;
+            color: white;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(90deg, #9146ff, #772ce8);
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        .header h1 {
+            font-size: 1.5em;
+            font-weight: 700;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .btn {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-1px);
+        }
+
+        .btn.active {
+            background: #00ff88;
+            color: #0e0e10;
+            font-weight: bold;
+        }
+
+        .main-container {
+            margin-top: 60px;
+            height: calc(100vh - 60px);
+            position: relative;
+            display: flex;
+        }
+
+        .content-area {
+            flex: 1;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .content-area.with-chat {
+            margin-right: 350px;
+        }
+
+        /* Chat Panel Styles */
+        .chat-panel {
+            position: fixed;
+            top: 60px;
+            right: -350px;
+            width: 350px;
+            height: calc(100vh - 60px);
+            background: #18181b;
+            border-left: 2px solid #333;
+            transition: right 0.3s ease;
+            z-index: 500;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-panel.open {
+            right: 0;
+        }
+
+        .chat-header {
+            padding: 15px;
+            background: #1f1f23;
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header h3 {
+            color: #9146ff;
+            font-size: 16px;
+        }
+
+        .chat-close {
+            background: none;
+            border: none;
+            color: #999;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 4px;
+        }
+
+        .chat-close:hover {
+            background: #333;
+            color: white;
+        }
+
+        .chat-selector {
+            padding: 10px 15px;
+            background: #1a1a1d;
+            border-bottom: 1px solid #333;
+        }
+
+        .chat-selector select {
+            width: 100%;
+            padding: 8px;
+            background: #0e0e10;
+            color: white;
+            border: 1px solid #333;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .chat-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .chat-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #0e0e10;
+        }
+
+        .chat-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #666;
+            text-align: center;
+            padding: 20px;
+        }
+
+        /* Grid View Styles */
+        .grid-view {
+            display: grid;
+            gap: 2px;
+            height: 100%;
+            padding: 2px;
+        }
+
+        .grid-1 { grid-template-columns: 1fr; }
+        .grid-2 { grid-template-columns: 1fr 1fr; }
+        .grid-3 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+        .grid-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+        .grid-5, .grid-6 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
+
+        /* Theater View Styles */
+        .theater-view {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            gap: 2px;
+            padding: 2px;
+        }
+
+        .main-stream {
+            flex: 1;
+            position: relative;
+            background: #1a1a1d;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .sub-streams {
+            height: 120px;
+            display: flex;
+            gap: 2px;
+            overflow-x: auto;
+            padding: 2px 0;
+        }
+
+        .sub-stream {
+            min-width: 200px;
+            height: 100%;
+            position: relative;
+            background: #1a1a1d;
+            border-radius: 6px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .sub-stream:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(145, 70, 255, 0.3);
+        }
+
+        /* Stream Container Styles */
+        .stream-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: #1a1a1d;
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .stream-container:hover {
+            transform: scale(1.01);
+            box-shadow: 0 2px 8px rgba(145, 70, 255, 0.2);
+        }
+
+        .stream-container.active {
+            box-shadow: 0 0 0 3px #00ff88;
+        }
+
+        .stream-container.muted {
+            opacity: 0.7;
+        }
+
+        .stream-container.locked {
+            pointer-events: none;
+        }
+
+        .stream-container.locked .stream-iframe {
+            pointer-events: none;
+        }
+
+        .stream-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #000;
+            pointer-events: auto;
+        }
+
+        .stream-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 30%, transparent 70%, rgba(0,0,0,0.7) 100%);
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .stream-container:hover .stream-overlay {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .stream-container.locked .stream-overlay {
+            pointer-events: auto;
+        }
+
+        .stream-container:not(.locked) .stream-overlay {
+            pointer-events: none !important;
+        }
+
+        .stream-container:not(.locked) .stream-overlay:hover {
+            opacity: 1 !important;
+            pointer-events: auto !important;
+        }
+
+        .stream-info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stream-name {
+            background: rgba(0,0,0,0.8);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .stream-controls {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+        }
+
+        .stream-btn {
+            background: rgba(0,0,0,0.8);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: all 0.2s;
+        }
+
+        .stream-btn:hover {
+            background: #9146ff;
+        }
+
+        .stream-btn.audio-active {
+            background: #00ff88;
+            color: #0e0e10;
+        }
+
+        .stream-btn.lock-active {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .stream-btn.chat-active {
+            background: #9146ff;
+            color: white;
+        }
+
+        .add-stream {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(45deg, #9146ff, #772ce8);
+            border: 2px dashed rgba(255,255,255,0.3);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-height: 200px;
+        }
+
+        .add-stream:hover {
+            border-color: #00ff88;
+            transform: scale(1.02);
+        }
+
+        .add-stream-content {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .add-stream-icon {
+            font-size: 3em;
+            margin-bottom: 10px;
+            opacity: 0.7;
+        }
+
+        /* Modal Styles */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+
+        .modal-content {
+            background: #18181b;
+            padding: 30px;
+            border-radius: 12px;
+            min-width: 400px;
+            max-width: 500px;
+        }
+
+        .modal h3 {
+            margin-bottom: 20px;
+            color: #9146ff;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #333;
+            border-radius: 6px;
+            background: #0e0e10;
+            color: white;
+            font-size: 16px;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #9146ff;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .modal-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .modal-btn.primary {
+            background: #9146ff;
+            color: white;
+        }
+
+        .modal-btn.secondary {
+            background: #333;
+            color: white;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                padding: 10px;
+            }
+            
+            .controls {
+                gap: 5px;
+            }
+            
+            .btn {
+                padding: 6px 10px;
+                font-size: 12px;
+            }
+            
+            .sub-streams {
+                height: 80px;
+            }
+            
+            .sub-stream {
+                min-width: 140px;
+            }
+
+            .chat-panel {
+                width: 300px;
+                right: -300px;
+            }
+
+            .content-area.with-chat {
+                margin-right: 300px;
+            }
+        }
+
+        /* Loading animation */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            background: #1a1a1d;
+        }
+
+        .loading::after {
+            content: '';
+            width: 40px;
+            height: 40px;
+            border: 4px solid #333;
+            border-top: 4px solid #9146ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎮 Twitch Multi-Viewer</h1>
+        <div class="controls">
+            <button class="btn" id="gridViewBtn" onclick="switchToGrid()">Grid View</button>
+            <button class="btn active" id="theaterViewBtn" onclick="switchToTheater()">Theater View</button>
+            <button class="btn" onclick="addStream()">+ Add Stream</button>
+            <button class="btn" onclick="toggleChat()">💬 Chat</button>
+            <button class="btn" onclick="muteAll()">🔇 Mute All</button>
+            <button class="btn" onclick="resetLayout()">🔄 Reset</button>
+        </div>
+    </div>
+
+    <div class="main-container" id="mainContainer">
+        <div class="content-area" id="contentArea">
+            <!-- Content will be dynamically generated -->
+        </div>
+    </div>
+
+    <!-- Chat Panel -->
+    <div class="chat-panel" id="chatPanel">
+        <div class="chat-header">
+            <h3>💬 Chat</h3>
+            <button class="chat-close" onclick="toggleChat()">×</button>
+        </div>
+        <div class="chat-selector">
+            <select id="chatSelector" onchange="changeChatStream()">
+                <option value="">Select a stream for chat...</option>
+            </select>
+        </div>
+        <div class="chat-container">
+            <div class="chat-placeholder" id="chatPlaceholder">
+                Select a stream above to view its chat
+            </div>
+            <iframe class="chat-iframe" id="chatIframe" style="display: none;"></iframe>
+        </div>
+    </div>
+
+    <!-- Add/Edit Stream Modal -->
+    <div class="modal" id="streamModal">
+        <div class="modal-content">
+            <h3 id="modalTitle">Add New Stream</h3>
+            <div class="input-group">
+                <label for="streamerName">Streamer Username:</label>
+                <input type="text" id="streamerName" placeholder="Enter Twitch username..." />
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn secondary" onclick="closeModal()">Cancel</button>
+                <button class="modal-btn primary" onclick="saveStream()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class TwitchMultiViewer {
+            constructor() {
+                this.streams = [
+                    { id: 1, username: 'grits', active: false, locked: true },
+                    { id: 2, username: 'opmarked', active: false, locked: true },
+                    { id: 3, username: 'bobbypoffgaming', active: false, locked: true },
+                    { id: 4, username: 'slater', active: false, locked: true }
+                ];
+                this.currentView = 'theater';
+                this.activeAudioStream = 1;
+                this.mainStream = 1;
+                this.editingStreamId = null;
+                this.maxStreams = 12;
+                this.chatOpen = false;
+                this.currentChatStream = null;
+                this.iframeCache = new Map(); // Cache iframes to prevent reloading
+                
+                this.init();
+            }
+
+            init() {
+                this.loadFromStorage();
+                this.render();
+                this.setupEventListeners();
+                this.updateChatSelector();
+            }
+
+            loadFromStorage() {
+                const saved = localStorage.getItem('twitchMultiViewer');
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    this.streams = data.streams || this.streams;
+                    this.currentView = data.currentView || this.currentView;
+                    this.activeAudioStream = data.activeAudioStream || this.activeAudioStream;
+                    this.mainStream = data.mainStream || this.mainStream;
+                    this.chatOpen = data.chatOpen || this.chatOpen;
+                    this.currentChatStream = data.currentChatStream || this.currentChatStream;
+                    
+                    // Ensure all streams have locked property
+                    this.streams.forEach(stream => {
+                        if (stream.locked === undefined) {
+                            stream.locked = true;
+                        }
+                    });
+                }
+            }
+
+            saveToStorage() {
+                const data = {
+                    streams: this.streams,
+                    currentView: this.currentView,
+                    activeAudioStream: this.activeAudioStream,
+                    mainStream: this.mainStream,
+                    chatOpen: this.chatOpen,
+                    currentChatStream: this.currentChatStream
+                };
+                localStorage.setItem('twitchMultiViewer', JSON.stringify(data));
+            }
+
+            setupEventListeners() {
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (e) => {
+                    if (e.ctrlKey || e.metaKey) return;
+                    
+                    // Number keys 1-9 to switch main stream in theater mode
+                    if (e.key >= '1' && e.key <= '9') {
+                        const streamIndex = parseInt(e.key) - 1;
+                        if (this.currentView === 'theater' && this.streams[streamIndex]) {
+                            this.setMainStream(this.streams[streamIndex].id);
+                        }
+                    }
+                    
+                    // Space to toggle audio
+                    if (e.key === ' ') {
+                        e.preventDefault();
+                        this.toggleAudio();
+                    }
+                    
+                    // Tab to switch views
+                    if (e.key === 'Tab') {
+                        e.preventDefault();
+                        this.currentView === 'grid' ? this.switchToTheater() : this.switchToGrid();
+                    }
+
+                    // C to toggle chat
+                    if (e.key === 'c' || e.key === 'C') {
+                        this.toggleChat();
+                    }
+                });
+            }
+
+            render() {
+                // Cache existing iframes before rendering
+                this.cacheIframes();
+                
+                const container = document.getElementById('contentArea');
+                
+                if (this.currentView === 'grid') {
+                    this.renderGridView(container);
+                } else {
+                    this.renderTheaterView(container);
+                }
+                
+                // Restore cached iframes after rendering
+                this.restoreIframes();
+                
+                this.updateViewButtons();
+                this.updateChatPanel();
+                this.updateChatSelector();
+                this.saveToStorage();
+            }
+
+            cacheIframes() {
+                // Store existing iframes to prevent reloading
+                this.streams.forEach(stream => {
+                    const existingIframe = document.getElementById(`iframe-${stream.id}`);
+                    if (existingIframe) {
+                        this.iframeCache.set(stream.id, existingIframe.cloneNode(true));
+                    }
+                });
+            }
+
+            updateStreamStates() {
+                this.streams.forEach(stream => {
+                    this.updateSingleStreamUI(stream.id);
+                });
+            }
+
+            renderGridView(container) {
+                const streamCount = this.streams.length;
+                const gridClass = `grid-${Math.min(streamCount, 6)}`;
+                
+                container.innerHTML = `
+                    <div class="grid-view ${gridClass}" id="streamsGrid">
+                        ${this.streams.map(stream => this.createStreamElement(stream, 'grid')).join('')}
+                        ${streamCount < this.maxStreams ? this.createAddStreamElement() : ''}
+                    </div>
+                `;
+                
+                this.loadStreams();
+            }
+
+            renderTheaterView(container) {
+                const mainStreamData = this.streams.find(s => s.id === this.mainStream) || this.streams[0];
+                const subStreams = this.streams.filter(s => s.id !== this.mainStream);
+                
+                container.innerHTML = `
+                    <div class="theater-view">
+                        <div class="main-stream">
+                            ${this.createStreamElement(mainStreamData, 'main')}
+                        </div>
+                        <div class="sub-streams">
+                            ${subStreams.map(stream => this.createStreamElement(stream, 'sub')).join('')}
+                            ${this.streams.length < this.maxStreams ? `
+                                <div class="sub-stream add-stream" onclick="app.addStream()">
+                                    <div class="add-stream-content">
+                                        <div class="add-stream-icon">+</div>
+                                        <div>Add Stream</div>
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+                
+                this.loadStreams();
+            }
+
+            createStreamElement(stream, type) {
+                const isActive = this.activeAudioStream === stream.id;
+                const isMain = type === 'main';
+                const isLocked = stream.locked;
+                const isChatActive = this.currentChatStream === stream.id;
+                const domain = window.location.hostname || 'localhost';
+                
+                // Use proper Twitch embed URL format
+                const embedUrl = `https://player.twitch.tv/?channel=${stream.username}&enableExtensions=true&muted=${!isActive}&parent=${domain}&player=popout&quality=auto&volume=${isActive ? '0.5' : '0'}`;
+                
+                return `
+                    <div class="stream-container ${type === 'sub' ? 'sub-stream' : ''} ${isActive ? 'active' : ''} ${!isActive ? 'muted' : ''} ${isLocked ? 'locked' : ''}"
+                         data-stream-id="${stream.id}" onclick="app.handleStreamClick(${stream.id}, '${type}')">
+                        <div class="loading" id="loading-${stream.id}"></div>
+                        <iframe class="stream-iframe"
+                                id="iframe-${stream.id}"
+                                src="${embedUrl}"
+                                allowfullscreen
+                                allow="autoplay; fullscreen">
+                        </iframe>
+                        <div class="stream-overlay">
+                            <div class="stream-info">
+                                <div class="stream-name">${stream.username}</div>
+                                <div class="stream-controls">
+                                    ${!isMain ? `<button class="stream-btn" onclick="event.stopPropagation(); app.setMainStream(${stream.id})" title="Set as main stream">📺</button>` : ''}
+                                    <button class="stream-btn ${isActive ? 'audio-active' : ''}" onclick="event.stopPropagation(); app.toggleStreamAudio(${stream.id})" title="Toggle audio">
+                                        ${isActive ? '🔊' : '🔇'}
+                                    </button>
+                                    <button class="stream-btn ${isChatActive ? 'chat-active' : ''}" onclick="event.stopPropagation(); app.setChatStream(${stream.id})" title="Show chat">💬</button>
+                                    <button class="stream-btn ${isLocked ? 'lock-active' : ''}" onclick="event.stopPropagation(); app.toggleStreamLock(${stream.id})" title="Lock/unlock stream controls">
+                                        ${isLocked ? '🔒' : '🔓'}
+                                    </button>
+                                    <button class="stream-btn" onclick="event.stopPropagation(); app.editStream(${stream.id})" title="Edit stream">✏️</button>
+                                    <button class="stream-btn" onclick="event.stopPropagation(); app.removeStream(${stream.id})" title="Remove stream">❌</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            createAddStreamElement() {
+                return `
+                    <div class="add-stream" onclick="app.addStream()">
+                        <div class="add-stream-content">
+                            <div class="add-stream-icon">+</div>
+                            <div>Add Stream</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            loadStreams() {
+                // Only load streams that don't have cached iframes
+                this.streams.forEach(stream => {
+                    const iframe = document.getElementById(`iframe-${stream.id}`);
+                    const loading = document.getElementById(`loading-${stream.id}`);
+                    
+                    if (iframe && loading && !this.iframeCache.has(stream.id)) {
+                        iframe.style.display = 'none';
+                        
+                        setTimeout(() => {
+                            loading.style.display = 'none';
+                            iframe.style.display = 'block';
+                        }, 1000 + Math.random() * 2000);
+                    } else if (iframe && loading && this.iframeCache.has(stream.id)) {
+                        // Stream was cached, no loading needed
+                        loading.style.display = 'none';
+                        iframe.style.display = 'block';
+                    }
+                });
+            }
+
+            switchToGrid() {
+                this.currentView = 'grid';
+                this.render();
+            }
+
+            switchToTheater() {
+                this.currentView = 'theater';
+                this.render();
+            }
+
+            updateViewButtons() {
+                const gridBtn = document.getElementById('gridViewBtn');
+                const theaterBtn = document.getElementById('theaterViewBtn');
+                
+                gridBtn.classList.toggle('active', this.currentView === 'grid');
+                theaterBtn.classList.toggle('active', this.currentView === 'theater');
+            }
+
+            toggleChat() {
+                this.chatOpen = !this.chatOpen;
+                this.updateChatPanel();
+                this.saveToStorage();
+            }
+
+            updateChatPanel() {
+                const chatPanel = document.getElementById('chatPanel');
+                const contentArea = document.getElementById('contentArea');
+                
+                chatPanel.classList.toggle('open', this.chatOpen);
+                contentArea.classList.toggle('with-chat', this.chatOpen);
+            }
+
+            updateChatSelector() {
+                const selector = document.getElementById('chatSelector');
+                if (!selector) return;
+                
+                selector.innerHTML = '<option value="">Select a stream for chat...</option>';
+                
+                this.streams.forEach(stream => {
+                    const option = document.createElement('option');
+                    option.value = stream.id;
+                    option.textContent = stream.username;
+                    if (stream.id === this.currentChatStream) {
+                        option.selected = true;
+                    }
+                    selector.appendChild(option);
+                });
+            }
+
+            setChatStream(streamId) {
+                this.currentChatStream = streamId;
+                this.chatOpen = true;
+                this.updateChatPanel();
+                this.changeChatStream();
+                this.render();
+            }
+
+            changeChatStream() {
+                const selector = document.getElementById('chatSelector');
+                const chatIframe = document.getElementById('chatIframe');
+                const chatPlaceholder = document.getElementById('chatPlaceholder');
+                
+                const streamId = selector.value || this.currentChatStream;
+                
+                if (streamId) {
+                    const stream = this.streams.find(s => s.id == streamId);
+                    if (stream) {
+                        const domain = window.location.hostname || 'localhost';
+                        const chatUrl = `https://www.twitch.tv/embed/${stream.username}/chat?parent=${domain}&darkpopout`;
+                        
+                        chatIframe.src = chatUrl;
+                        chatIframe.style.display = 'block';
+                        chatPlaceholder.style.display = 'none';
+                        
+                        this.currentChatStream = parseInt(streamId);
+                    }
+                } else {
+                    chatIframe.style.display = 'none';
+                    chatPlaceholder.style.display = 'flex';
+                    this.currentChatStream = null;
+                }
+                
+                this.saveToStorage();
+            }
+
+            toggleStreamLock(streamId) {
+                const stream = this.streams.find(s => s.id === streamId);
+                if (stream) {
+                    stream.locked = !stream.locked;
+                    this.updateSingleStreamUI(streamId);
+                    this.saveToStorage();
+                }
+            }
+
+            setMainStream(streamId) {
+                if (this.currentView === 'theater') {
+                    this.mainStream = streamId;
+                    // Also switch audio to the new main stream
+                    this.activeAudioStream = streamId;
+                    this.render();
+                }
+            }
+
+            toggleStreamAudio(streamId) {
+                const wasActive = this.activeAudioStream === streamId;
+                
+                // Update active audio stream
+                this.activeAudioStream = wasActive ? null : streamId;
+                
+                // Update all iframes with proper audio settings WITHOUT reloading
+                this.streams.forEach(stream => {
+                    const iframe = document.getElementById(`iframe-${stream.id}`);
+                    if (iframe) {
+                        const isActive = this.activeAudioStream === stream.id;
+                        // Instead of changing src, send message to iframe to change audio
+                        try {
+                            iframe.contentWindow.postMessage({
+                                type: 'setMuted',
+                                muted: !isActive
+                            }, '*');
+                        } catch (e) {
+                            // Fallback: only update src if postMessage fails and audio state changed
+                            if ((stream.id === streamId) || (wasActive && stream.id === this.activeAudioStream)) {
+                                const domain = window.location.hostname || 'localhost';
+                                const newSrc = `https://player.twitch.tv/?channel=${stream.username}&enableExtensions=true&muted=${!isActive}&parent=${domain}&player=popout&quality=auto&volume=${isActive ? '0.5' : '0'}`;
+                                iframe.src = newSrc;
+                            }
+                        }
+                    }
+                });
+                
+                // Update UI only - no reloading
+                this.updateAudioButtonsOnly();
+                this.saveToStorage();
+            }
+
+            updateAudioButtonsOnly() {
+                this.streams.forEach(stream => {
+                    const container = document.querySelector(`[data-stream-id="${stream.id}"]`);
+                    if (container) {
+                        const isActive = this.activeAudioStream === stream.id;
+                        const audioBtn = container.querySelector('.stream-btn:nth-child(2)'); // Audio button is 2nd
+                        
+                        container.classList.toggle('active', isActive);
+                        container.classList.toggle('muted', !isActive);
+                        
+                        if (audioBtn) {
+                            audioBtn.classList.toggle('audio-active', isActive);
+                            audioBtn.innerHTML = isActive ? '🔊' : '🔇';
+                        }
+                    }
+                });
+            }
+
+            handleStreamClick(streamId, type) {
+                const stream = this.streams.find(s => s.id === streamId);
+                if (!stream || stream.locked) {
+                    if (type === 'sub' && this.currentView === 'theater') {
+                        this.setMainStream(streamId);
+                    }
+                    return;
+                }
+                
+                // If unlocked, allow interaction with the iframe
+                // The iframe will handle its own interactions
+            }
+
+            restoreIframes() {
+                // Restore cached iframes to maintain stream state
+                this.streams.forEach(stream => {
+                    const newContainer = document.querySelector(`[data-stream-id="${stream.id}"]`);
+                    const cachedIframe = this.iframeCache.get(stream.id);
+                    
+                    if (newContainer && cachedIframe) {
+                        const existingIframe = newContainer.querySelector('.stream-iframe');
+                        const loading = newContainer.querySelector('.loading');
+                        
+                        if (existingIframe) {
+                            // Replace the new iframe with the cached one
+                            existingIframe.parentNode.replaceChild(cachedIframe, existingIframe);
+                            if (loading) loading.style.display = 'none';
+                        }
+                    }
+                });
+            }
+
+            updateSingleStreamUI(streamId) {
+                const stream = this.streams.find(s => s.id === streamId);
+                const container = document.querySelector(`[data-stream-id="${streamId}"]`);
+                
+                if (!stream || !container) return;
+                
+                // Update container classes
+                const isActive = this.activeAudioStream === stream.id;
+                const isChatActive = this.currentChatStream === stream.id;
+                
+                container.classList.toggle('active', isActive);
+                container.classList.toggle('muted', !isActive);
+                container.classList.toggle('locked', stream.locked);
+                
+                // Update control buttons
+                const controls = container.querySelector('.stream-controls');
+                if (controls) {
+                    const isMain = this.mainStream === stream.id && this.currentView === 'theater';
+                    
+                    controls.innerHTML = `
+                        ${!isMain ? `<button class="stream-btn" onclick="event.stopPropagation(); app.setMainStream(${stream.id})" title="Set as main stream">📺</button>` : ''}
+                        <button class="stream-btn ${isActive ? 'audio-active' : ''}" onclick="event.stopPropagation(); app.toggleStreamAudio(${stream.id})" title="Toggle audio">
+                            ${isActive ? '🔊' : '🔇'}
+                        </button>
+                        <button class="stream-btn ${isChatActive ? 'chat-active' : ''}" onclick="event.stopPropagation(); app.setChatStream(${stream.id})" title="Show chat">💬</button>
+                        <button class="stream-btn ${stream.locked ? 'lock-active' : ''}" onclick="event.stopPropagation(); app.toggleStreamLock(${stream.id})" title="Lock/unlock stream controls">
+                            ${stream.locked ? '🔒' : '🔓'}
+                        </button>
+                        <button class="stream-btn" onclick="event.stopPropagation(); app.editStream(${stream.id})" title="Edit stream">✏️</button>
+                        <button class="stream-btn" onclick="event.stopPropagation(); app.removeStream(${stream.id})" title="Remove stream">❌</button>
+                    `;
+                }
+                
+                // Update stream name
+                const nameElement = container.querySelector('.stream-name');
+                if (nameElement) {
+                    nameElement.textContent = stream.username;
+                }
+            }
+
+            toggleAudio() {
+                if (this.activeAudioStream) {
+                    this.muteAll();
+                } else if (this.streams.length > 0) {
+                    const targetStream = this.mainStream || this.streams[0].id;
+                    this.toggleStreamAudio(targetStream);
+                }
+            }
+
+            muteAll() {
+                this.activeAudioStream = null;
+                
+                // Update all iframes to be muted
+                this.streams.forEach(stream => {
+                    const iframe = document.getElementById(`iframe-${stream.id}`);
+                    if (iframe) {
+                        const domain = window.location.hostname || 'localhost';
+                        const newSrc = `https://player.twitch.tv/?channel=${stream.username}&enableExtensions=true&muted=true&parent=${domain}&player=popout&quality=auto&volume=0`;
+                        iframe.src = newSrc;
+                    }
+                });
+                
+                this.updateStreamStates();
+                this.saveToStorage();
+            }
+
+            addStream() {
+                this.editingStreamId = null;
+                document.getElementById('modalTitle').textContent = 'Add New Stream';
+                document.getElementById('streamerName').value = '';
+                document.getElementById('streamModal').style.display = 'flex';
+                document.getElementById('streamerName').focus();
+            }
+
+            editStream(streamId) {
+                const stream = this.streams.find(s => s.id === streamId);
+                if (!stream) return;
+                
+                this.editingStreamId = streamId;
+                document.getElementById('modalTitle').textContent = 'Edit Stream';
+                document.getElementById('streamerName').value = stream.username;
+                document.getElementById('streamModal').style.display = 'flex';
+                document.getElementById('streamerName').focus();
+            }
+
+            saveStream() {
+                const username = document.getElementById('streamerName').value.trim().toLowerCase();
+                
+                if (!username) {
+                    alert('Please enter a streamer username');
+                    return;
+                }
+                
+                if (this.editingStreamId) {
+                    // Edit existing stream - only update the specific iframe
+                    const stream = this.streams.find(s => s.id === this.editingStreamId);
+                    if (stream) {
+                        const oldUsername = stream.username;
+                        stream.username = username;
+                        
+                        // Only update the specific iframe if username changed
+                        if (oldUsername !== username) {
+                            this.updateSingleIframe(this.editingStreamId);
+                        }
+                        
+                        // Update UI elements without full reload
+                        this.updateSingleStreamUI(this.editingStreamId);
+                        this.updateChatSelector();
+                    }
+                } else {
+                    // Add new stream - insert without reloading existing streams
+                    if (this.streams.length >= this.maxStreams) {
+                        alert(`Maximum ${this.maxStreams} streams allowed`);
+                        return;
+                    }
+                    
+                    const newId = Math.max(...this.streams.map(s => s.id), 0) + 1;
+                    const newStream = {
+                        id: newId,
+                        username: username,
+                        active: false,
+                        locked: true
+                    };
+                    
+                    this.streams.push(newStream);
+                    this.addNewStreamToLayout(newStream);
+                    this.updateChatSelector();
+                }
+                
+                this.closeModal();
+                this.saveToStorage();
+            }
+
+            addNewStreamToLayout(newStream) {
+                // Add new stream to current layout without affecting existing streams
+                if (this.currentView === 'grid') {
+                    this.addStreamToGrid(newStream);
+                } else {
+                    this.addStreamToTheater(newStream);
+                }
+            }
+
+            addStreamToGrid(newStream) {
+                const grid = document.getElementById('streamsGrid');
+                if (!grid) return;
+                
+                // Update grid class for new stream count
+                const streamCount = this.streams.length;
+                const gridClass = `grid-${Math.min(streamCount, 6)}`;
+                grid.className = `grid-view ${gridClass}`;
+                
+                // Create and insert new stream element
+                const newStreamElement = document.createElement('div');
+                newStreamElement.innerHTML = this.createStreamElement(newStream, 'grid');
+                
+                // Remove add-stream button if it exists
+                const addButton = grid.querySelector('.add-stream');
+                if (addButton) {
+                    addButton.remove();
+                }
+                
+                // Add new stream
+                grid.appendChild(newStreamElement.firstElementChild);
+                
+                // Re-add the add-stream button if under max
+                if (this.streams.length < this.maxStreams) {
+                    const addStreamDiv = document.createElement('div');
+                    addStreamDiv.innerHTML = this.createAddStreamElement();
+                    grid.appendChild(addStreamDiv.firstElementChild);
+                }
+                
+                this.loadSingleStream(newStream.id);
+            }
+
+            addStreamToTheater(newStream) {
+                const subStreams = document.querySelector('.sub-streams');
+                if (!subStreams) return;
+                
+                // Create new stream element
+                const newStreamElement = document.createElement('div');
+                newStreamElement.innerHTML = this.createStreamElement(newStream, 'sub');
+                
+                // Remove add-stream button if it exists
+                const addButton = subStreams.querySelector('.add-stream');
+                if (addButton) {
+                    addButton.remove();
+                }
+                
+                // Add new stream
+                subStreams.appendChild(newStreamElement.firstElementChild);
+                
+                // Re-add the add-stream button if under max
+                if (this.streams.length < this.maxStreams) {
+                    const addStreamDiv = document.createElement('div');
+                    addStreamDiv.innerHTML = `
+                        <div class="sub-stream add-stream" onclick="app.addStream()">
+                            <div class="add-stream-content">
+                                <div class="add-stream-icon">+</div>
+                                <div>Add Stream</div>
+                            </div>
+                        </div>
+                    `;
+                    subStreams.appendChild(addStreamDiv.firstElementChild);
+                }
+                
+                this.loadSingleStream(newStream.id);
+            }
+
+            loadSingleStream(streamId) {
+                // Load only the specific new stream
+                const iframe = document.getElementById(`iframe-${streamId}`);
+                const loading = document.getElementById(`loading-${streamId}`);
+                
+                if (iframe && loading) {
+                    iframe.style.display = 'none';
+                    
+                    setTimeout(() => {
+                        loading.style.display = 'none';
+                        iframe.style.display = 'block';
+                    }, 1000 + Math.random() * 2000);
+                }
+            }
+
+            updateSingleIframe(streamId) {
+                const stream = this.streams.find(s => s.id === streamId);
+                const iframe = document.getElementById(`iframe-${streamId}`);
+                
+                if (stream && iframe) {
+                    const isActive = this.activeAudioStream === streamId;
+                    const domain = window.location.hostname || 'localhost';
+                    const newSrc = `https://player.twitch.tv/?channel=${stream.username}&enableExtensions=true&muted=${!isActive}&parent=${domain}&player=popout&quality=auto&volume=${isActive ? '0.5' : '0'}`;
+                    iframe.src = newSrc;
+                }
+            }
+
+            removeStream(streamId) {
+                if (this.streams.length <= 1) {
+                    alert('At least one stream is required');
+                    return;
+                }
+                
+                this.streams = this.streams.filter(s => s.id !== streamId);
+                
+                // Update references if needed
+                if (this.activeAudioStream === streamId) {
+                    this.activeAudioStream = this.streams[0]?.id || null;
+                }
+                if (this.mainStream === streamId) {
+                    this.mainStream = this.streams[0]?.id || 1;
+                }
+                if (this.currentChatStream === streamId) {
+                    this.currentChatStream = null;
+                    this.changeChatStream();
+                }
+                
+                this.render();
+            }
+
+            resetLayout() {
+                this.streams = [
+                    { id: 1, username: 'grits', active: false, locked: true },
+                    { id: 2, username: 'opmarked', active: false, locked: true },
+                    { id: 3, username: 'bobbypoffgaming', active: false, locked: true },
+                    { id: 4, username: 'slater', active: false, locked: true }
+                ];
+                this.activeAudioStream = 1;
+                this.mainStream = 1;
+                this.currentChatStream = null;
+                this.chatOpen = false;
+                this.render();
+            }
+
+            closeModal() {
+                document.getElementById('streamModal').style.display = 'none';
+            }
+        }
+
+        // Global app instance
+        const app = new TwitchMultiViewer();
+
+        // Global functions for inline event handlers
+        function switchToGrid() {
+            app.switchToGrid();
+        }
+
+        function switchToTheater() {
+            app.switchToTheater();
+        }
+
+        function addStream() {
+            app.addStream();
+        }
+
+        function toggleChat() {
+            app.toggleChat();
+        }
+
+        function muteAll() {
+            app.muteAll();
+        }
+
+        function resetLayout() {
+            app.resetLayout();
+        }
+
+        function closeModal() {
+            app.closeModal();
+        }
+
+        function saveStream() {
+            app.saveStream();
+        }
+
+        function changeChatStream() {
+            app.changeChatStream();
+        }
+
+        // Modal keyboard handling
+        document.addEventListener('keydown', (e) => {
+            const modal = document.getElementById('streamModal');
+            if (modal.style.display === 'flex') {
+                if (e.key === 'Escape') {
+                    app.closeModal();
+                } else if (e.key === 'Enter') {
+                    app.saveStream();
+                }
+            }
+        });
+
+        // Click outside modal to close
+        document.getElementById('streamModal').addEventListener('click', (e) => {
+            if (e.target.id === 'streamModal') {
+                app.closeModal();
+            }
+        });
+
+        // Click outside chat panel to close on mobile
+        document.addEventListener('click', (e) => {
+            const chatPanel = document.getElementById('chatPanel');
+            const chatBtn = e.target.closest('.btn');
+            
+            if (window.innerWidth <= 768 &&
+                app.chatOpen &&
+                !chatPanel.contains(e.target) &&
+                (!chatBtn || !chatBtn.textContent.includes('Chat'))) {
+                app.toggleChat();
+            }
+        });
+    </script>
+</body>
+</html>
