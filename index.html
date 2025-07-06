@@ -604,10 +604,41 @@
                 this.maxStreams = 12;
                 this.chatOpen = false;
                 this.currentChatStream = null;
-                this.streamElements = new Map(); // Store actual DOM elements with all components
+                this.streamElements = new Map();
                 this.isTransitioning = false;
                 
+                // Fixed parent domains for GitHub Pages
+                this.parentDomains = this.getParentDomains();
+                
                 this.init();
+            }
+
+            getParentDomains() {
+                const hostname = window.location.hostname;
+                
+                // Handle GitHub Pages domains
+                if (hostname.includes('github.io')) {
+                    return [hostname, 'localhost', '127.0.0.1'];
+                }
+                
+                // Handle custom domains or local development
+                if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '') {
+                    return ['localhost', '127.0.0.1', 'tbenitz.github.io'];
+                }
+                
+                // Default case
+                return [hostname, 'localhost'];
+            }
+
+            getEmbedUrl(username, type = 'player') {
+                const parentParam = this.parentDomains.join('&parent=');
+                
+                if (type === 'chat') {
+                    return `https://www.twitch.tv/embed/${username}/chat?parent=${parentParam}&darkpopout`;
+                }
+                
+                // Use the most stable player URL format for authentication persistence
+                return `https://player.twitch.tv/?channel=${username}&parent=${parentParam}&muted=false&autoplay=false&controls=true&time=0`;
             }
 
             init() {
@@ -619,7 +650,7 @@
             }
 
             loadFromStorage() {
-                const saved = sessionStorage.getItem('twitchMultiViewer');
+                const saved = localStorage.getItem('twitchMultiViewer');
                 if (saved) {
                     try {
                         const data = JSON.parse(saved);
@@ -651,7 +682,7 @@
                     chatOpen: this.chatOpen,
                     currentChatStream: this.currentChatStream
                 };
-                sessionStorage.setItem('twitchMultiViewer', JSON.stringify(data));
+                localStorage.setItem('twitchMultiViewer', JSON.stringify(data));
             }
 
             createInitialStreams() {
@@ -677,10 +708,9 @@
                 const isActive = this.activeAudioStream === stream.id;
                 const isLocked = stream.locked;
                 const isChatActive = this.currentChatStream === stream.id;
-                const domain = window.location.hostname || 'localhost';
                 
-                // Use proper Twitch embed URL format - NEVER change this after creation
-                const embedUrl = `https://player.twitch.tv/?channel=${stream.username}&enableExtensions=true&muted=true&parent=${domain}&player=popout&quality=auto&volume=0`;
+                // Use the fixed embed URL
+                const embedUrl = this.getEmbedUrl(stream.username, 'player');
                 
                 // Create container
                 const container = document.createElement('div');
@@ -692,13 +722,15 @@
                 loading.className = 'loading';
                 loading.id = `loading-${stream.id}`;
                 
-                // Create iframe - NEVER recreate this
+                // Create iframe with proper attributes for authentication persistence
                 const iframe = document.createElement('iframe');
                 iframe.className = 'stream-iframe';
                 iframe.id = `iframe-${stream.id}`;
                 iframe.src = embedUrl;
                 iframe.allowFullscreen = true;
-                iframe.allow = 'autoplay; fullscreen';
+                iframe.allow = 'autoplay; fullscreen; microphone; camera';
+                iframe.referrerPolicy = 'origin';
+                iframe.sandbox = 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms';
                 iframe.style.display = 'none';
                 
                 // Create overlay
@@ -718,7 +750,7 @@
                 const controls = document.createElement('div');
                 controls.className = 'stream-controls';
                 
-                // Create individual control buttons - NEVER recreate these
+                // Create individual control buttons
                 const mainBtn = document.createElement('button');
                 mainBtn.className = 'stream-btn';
                 mainBtn.textContent = '📺';
@@ -841,12 +873,21 @@
                 
                 const { iframe, loading } = elementData;
                 
+                // Add load event listener to hide loading when iframe loads
+                iframe.addEventListener('load', () => {
+                    if (loading.parentElement) {
+                        loading.style.display = 'none';
+                        iframe.style.display = 'block';
+                    }
+                });
+                
+                // Fallback timeout in case load event doesn't fire
                 setTimeout(() => {
                     if (loading.parentElement) {
                         loading.style.display = 'none';
                         iframe.style.display = 'block';
                     }
-                }, 1000 + Math.random() * 2000);
+                }, 3000);
             }
 
             updateLayout() {
@@ -986,7 +1027,7 @@
                 // Update stream name
                 elementData.streamName.textContent = stream.username;
                 
-                // Update button states - NEVER recreate, just update properties
+                // Update button states
                 elementData.buttons.audio.className = `stream-btn ${isActive ? 'audio-active' : ''}`;
                 elementData.buttons.audio.textContent = isActive ? '🔊' : '🔇';
                 
@@ -1074,7 +1115,6 @@
                 
                 // If stream is unlocked, allow iframe interaction
                 if (!stream.locked) {
-                    // Allow the click to pass through to the iframe
                     return;
                 }
             }
@@ -1088,23 +1128,6 @@
                 // Update all stream states
                 this.updateAllStreamStates();
                 this.saveToStorage();
-                
-                // Try to control audio via postMessage (won't reload iframe)
-                this.streams.forEach(stream => {
-                    const elementData = this.streamElements.get(stream.id);
-                    if (elementData) {
-                        const isActive = this.activeAudioStream === stream.id;
-                        try {
-                            elementData.iframe.contentWindow.postMessage({
-                                type: 'setMuted',
-                                muted: !isActive
-                            }, '*');
-                        } catch (e) {
-                            // Silently fail - we don't want to reload the iframe
-                            console.log('Audio control via postMessage failed, but iframe preserved');
-                        }
-                    }
-                });
             }
 
             toggleAudio() {
@@ -1172,12 +1195,14 @@
                 if (streamId) {
                     const stream = this.streams.find(s => s.id == streamId);
                     if (stream) {
-                        const domain = window.location.hostname || 'localhost';
-                        // Only change chat src when absolutely necessary
-                        const newChatUrl = `https://www.twitch.tv/embed/${stream.username}/chat?parent=${domain}&darkpopout`;
+                        // Use the fixed chat URL
+                        const newChatUrl = this.getEmbedUrl(stream.username, 'chat');
                         
                         if (chatIframe.src !== newChatUrl) {
                             chatIframe.src = newChatUrl;
+                            // Set proper attributes for chat iframe
+                            chatIframe.referrerPolicy = 'origin';
+                            chatIframe.sandbox = 'allow-scripts allow-same-origin allow-popups allow-forms';
                         }
                         
                         chatIframe.style.display = 'block';
@@ -1227,12 +1252,10 @@
                     if (stream && stream.username !== username) {
                         stream.username = username;
                         
-                        // Only update iframe if username actually changed and only if necessary
+                        // Update iframe with new URL
                         const elementData = this.streamElements.get(this.editingStreamId);
                         if (elementData) {
-                            const isActive = this.activeAudioStream === this.editingStreamId;
-                            const domain = window.location.hostname || 'localhost';
-                            const newSrc = `https://player.twitch.tv/?channel=${username}&enableExtensions=true&muted=true&parent=${domain}&player=popout&quality=auto&volume=0`;
+                            const newSrc = this.getEmbedUrl(username, 'player');
                             
                             // Show loading and update iframe
                             elementData.loading.style.display = 'flex';
